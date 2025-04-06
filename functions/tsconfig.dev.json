@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json", // It should extend your main tsconfig.json
+  "compilerOptions": {
+    // You can add or override specific compiler options for development here if needed
+    // For example, some projects relax unused variable checks for dev:
+    // "noUnusedLocals": false,
+    // "noUnusedParameters": false,
+    // If no specific overrides are needed, this compilerOptions block can be minimal or even omitted
+    // if all settings are inherited from tsconfig.json and are fine for dev.
+    "sourceMap": true // Often enabled for development
+  },
+  "include": [
+    "src" // This tells TypeScript to include all .ts files in your 'src' directory
+          // which is where your index.ts and other function files reside.
+  ]
+  // You might also have an "exclude" array here if needed, typically
+  // it would inherit from tsconfig.json or be like: "exclude": ["node_modules", "lib"]
+}
