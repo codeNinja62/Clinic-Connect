@@ -1,0 +1,262 @@
+/* Advanced Animations for Clinic Connect */
+
+/* Base Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes slideInUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from { 
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from { 
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from { 
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to { 
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Animation Classes */
+.fade-in {
+  animation: fadeIn 0.6s ease forwards;
+}
+
+.fade-out {
+  animation: fadeOut 0.4s ease forwards;
+}
+
+.slide-up {
+  animation: slideInUp 0.6s ease forwards;
+}
+
+.slide-right {
+  animation: slideInRight 0.6s ease forwards;
+}
+
+.slide-left {
+  animation: slideInLeft 0.6s ease forwards;
+}
+
+.scale-in {
+  animation: scaleIn 0.5s ease forwards;
+}
+
+.pulse {
+  animation: pulse 2s ease infinite;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+.bounce {
+  animation: bounce 2s ease infinite;
+}
+
+/* Staggered Animation for Lists */
+.stagger-list > * {
+  opacity: 0;
+}
+
+.stagger-list > *:nth-child(1) { animation: slideInUp 0.4s ease 0.1s forwards; }
+.stagger-list > *:nth-child(2) { animation: slideInUp 0.4s ease 0.2s forwards; }
+.stagger-list > *:nth-child(3) { animation: slideInUp 0.4s ease 0.3s forwards; }
+.stagger-list > *:nth-child(4) { animation: slideInUp 0.4s ease 0.4s forwards; }
+.stagger-list > *:nth-child(5) { animation: slideInUp 0.4s ease 0.5s forwards; }
+.stagger-list > *:nth-child(6) { animation: slideInUp 0.4s ease 0.6s forwards; }
+.stagger-list > *:nth-child(7) { animation: slideInUp 0.4s ease 0.7s forwards; }
+.stagger-list > *:nth-child(8) { animation: slideInUp 0.4s ease 0.8s forwards; }
+.stagger-list > *:nth-child(9) { animation: slideInUp 0.4s ease 0.9s forwards; }
+.stagger-list > *:nth-child(10) { animation: slideInUp 0.4s ease 1.0s forwards; }
+
+/* Shimmer Loading Effect */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.6),
+    rgba(255, 255, 255, 0)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Page Transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+.page-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-exit-active {
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+/* Special Animations */
+.float-animation {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+/* Appointment Status Indicators */
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-indicator.confirmed {
+  background-color: var(--color-success);
+  box-shadow: 0 0 0 rgba(6, 214, 160, 0.4);
+  animation: pulse-success 2s infinite;
+}
+
+.status-indicator.pending {
+  background-color: var(--color-warning);
+  box-shadow: 0 0 0 rgba(255, 189, 89, 0.4);
+  animation: pulse-warning 2s infinite;
+}
+
+.status-indicator.cancelled {
+  background-color: var(--color-error);
+}
+
+@keyframes pulse-success {
+  0% {
+    box-shadow: 0 0 0 0 rgba(6, 214, 160, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(6, 214, 160, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(6, 214, 160, 0);
+  }
+}
+
+@keyframes pulse-warning {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 189, 89, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 189, 89, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 189, 89, 0);
+  }
+}
+
+/* Notification Bell Animation */
+.notification-bell {
+  position: relative;
+  transition: transform 0.2s;
+}
+
+.notification-bell:hover {
+  transform: rotate(12deg);
+}
+
+.notification-bell.has-notifications {
+  animation: bell-ring 2s 0.5s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+@keyframes bell-ring {
+  0% { transform: rotate(0); }
+  1% { transform: rotate(15deg); }
+  3% { transform: rotate(-13deg); }
+  5% { transform: rotate(13deg); }
+  7% { transform: rotate(-8deg); }
+  9% { transform: rotate(8deg); }
+  11% { transform: rotate(0); }
+  100% { transform: rotate(0); }
+}
+
+.notification-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-error);
+  border-radius: 50%;
+  border: 2px solid white;
+  animation: pulse-error 2s infinite;
+}

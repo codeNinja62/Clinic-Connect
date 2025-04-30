@@ -1,0 +1,221 @@
+/* Responsive Design Improvements */
+
+/* Mobile First Approach */
+/* Base styles are for mobile, then we scale up */
+
+/* Extra Small Devices (phones, 576px and down) */
+@media (max-width: 576px) {
+  .auth-layout {
+    flex-direction: column;
+  }
+  
+  .auth-image {
+    display: none;
+  }
+  
+  .auth-form {
+    width: 100%;
+    padding: var(--spacing-md);
+  }
+  
+  .hero-section {
+    padding: var(--spacing-lg) var(--spacing-md);
+  }
+  
+  .hero-title {
+    font-size: 2rem;
+  }
+  
+  .btn-lg {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.9rem;
+  }
+  
+  .steps-container {
+    flex-direction: column;
+  }
+  
+  .step-connector {
+    height: 20px;
+    width: 2px;
+    margin: 0 auto;
+  }
+  
+  .menu-cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  
+  .dashboard-welcome {
+    padding: var(--spacing-md);
+  }
+  
+  .clinic-card-grid, 
+  .doctor-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Small Devices (landscape phones, 576px and up) */
+@media (min-width: 576px) {
+  .auth-form-inner {
+    padding: var(--spacing-lg);
+  }
+  
+  .steps-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .menu-cards {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  }
+}
+
+/* Medium Devices (tablets, 768px and up) */
+@media (min-width: 768px) {
+  .auth-layout {
+    flex-direction: row;
+  }
+  
+  .auth-image {
+    display: flex;
+    min-width: 40%;
+  }
+  
+  .steps-container {
+    display: grid;
+    grid-template-columns: 1fr 30px 1fr 30px 1fr 30px 1fr;
+    align-items: center;
+  }
+  
+  .step-connector {
+    width: 100%;
+    height: 2px;
+  }
+  
+  .testimonial-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Large Devices (desktops, 992px and up) */
+@media (min-width: 992px) {
+  .container {
+    max-width: 960px;
+  }
+  
+  .auth-image {
+    min-width: 45%;
+  }
+  
+  .grid-cols-3-lg {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .dashboard-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Extra Large Devices (large desktops, 1200px and up) */
+@media (min-width: 1200px) {
+  .container {
+    max-width: 1140px;
+  }
+  
+  .auth-image {
+    min-width: 50%;
+  }
+  
+  .grid-cols-4-xl {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Custom Component Responsive Styles */
+
+/* Tables Responsive */
+.table-responsive {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Cards responsive adjustments */
+.card-body {
+  padding: clamp(var(--spacing-md), 5vw, var(--spacing-lg));
+}
+
+/* Menu Cards */
+.menu-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+}
+
+/* Healthcare Cards */
+@media (max-width: 768px) {
+  .doctor-card-details {
+    flex-direction: column;
+  }
+  
+  .doctor-card-image-container {
+    width: 100%;
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .appointment-card {
+    flex-direction: column;
+  }
+  
+  .appointment-card-aside {
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    padding-left: 0;
+    padding-top: var(--spacing-md);
+    margin-top: var(--spacing-md);
+  }
+}
+
+/* Mobile Navigation */
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+  
+  .user-menu {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .search-form {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+  
+  .search-inputs {
+    grid-template-columns: 1fr;
+  }
+  
+  .search-form .btn {
+    width: 100%;
+  }
+}
+
+/* Make buttons full width on mobile */
+@media (max-width: 576px) {
+  .btn-block-sm {
+    width: 100%;
+  }
+  
+  .form-group {
+    margin-bottom: var(--spacing-md);
+  }
+}
