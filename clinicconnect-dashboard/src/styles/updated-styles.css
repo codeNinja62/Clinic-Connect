@@ -1,0 +1,222 @@
+/* Updated Styles for the application */
+/* This contains additional styling for the modernized UI */
+
+/* Page Container */
+.page-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--spacing-xl);
+}
+
+/* Page Header */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.page-title {
+  color: var(--color-primary);
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0;
+  font-family: var(--font-heading);
+}
+
+.page-subtitle {
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 1.1rem;
+  margin-bottom: var(--spacing-lg);
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.username {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* Dashboard Elements */
+.dashboard-welcome {
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, rgba(255, 255, 255, 0.8) 100%);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-xl);
+  margin-bottom: var(--spacing-xl);
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-welcome::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 5px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+}
+
+.dashboard-welcome-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  margin-bottom: var(--spacing-sm);
+}
+
+.dashboard-welcome-subtitle {
+  font-size: 1.1rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-lg);
+}
+
+.dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+/* Loading and Status Indicators */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl) 0;
+}
+
+.loading-text {
+  color: var(--color-primary);
+  font-size: 1.1rem;
+  margin-top: var(--spacing-md);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid var(--color-primary-light);
+  border-top-color: var(--color-primary);
+  animation: spin 1s linear infinite;
+}
+
+/* Form Page Layout */
+.form-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: var(--spacing-xl);
+}
+
+.form-section {
+  margin-bottom: var(--spacing-xl);
+}
+
+.form-section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Scrollable Area */
+.scrollable-area {
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: var(--spacing-sm);
+}
+
+.scrollable-area::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollable-area::-webkit-scrollbar-track {
+  background: var(--color-background-hover);
+  border-radius: 10px;
+}
+
+.scrollable-area::-webkit-scrollbar-thumb {
+  background-color: var(--color-primary-light);
+  border-radius: 10px;
+}
+
+.scrollable-area::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary);
+}
+
+/* User Avatar */
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.1rem;
+  border: 2px solid white;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Appointment Calendar */
+.appointment-calendar {
+  margin-bottom: var(--spacing-xl);
+}
+
+.date-selector {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  overflow-x: auto;
+  padding-bottom: var(--spacing-xs);
+  scrollbar-width: none; /* Firefox */
+}
+
+.date-selector::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
+}
+
+.date-option {
+  min-width: 60px;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-quick);
+}
+
+.date-option.selected {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.date-option:not(.selected):hover {
+  background-color: var(--color-primary-light);
+}
+
+.date-day {
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.date-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
