@@ -2,8 +2,107 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+
+    // ======================================================================
+    // Users Collection (/users/{userId})
+    // ======================================================================
+    match /users/{userId} {
+
+      // --- Helper function to check if the request is from an authenticated user ---
+      function isAuthenticated() {
+        return request.auth != null;
+      }
+
+      // --- Helper function to check if the requesting user is the owner of this document ---
+      function isOwner() {
+        return isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // READ Access:
+      // Allow users to read their own data.
+      allow read: if isOwner();
+
+      // CREATE Access:
+      // Disallow direct client-side creation (use backend Cloud Function).
+      allow create: if false;
+
+      // UPDATE Access:
+      // Allow user to update their own document, BUT prevent changing protected fields.
+      allow update: if isOwner() &&
+                     // Ensure the UID within the document data itself isn't being changed
+                     request.resource.data.uid == userId &&
+                     // --- Protected Field Checks ---
+                     // Compare incoming data (request.resource.data) with existing data (resource.data).
+                     // These fields MUST remain the same for the update to be allowed.
+                     request.resource.data.uid == resource.data.uid &&
+                     request.resource.data.role == resource.data.role &&
+                     request.resource.data.createdAt == resource.data.createdAt &&
+                     request.resource.data.profile.isEmailVerified == resource.data.profile.isEmailVerified &&
+                     request.resource.data.profile.isPhoneNumberVerified == resource.data.profile.isPhoneNumberVerified &&
+                     // Prevent changing a verified email directly via rules (needs dedicated flow).
+                     // Rule: If existing email was verified, incoming email must be the same.
+                     (resource.data.profile.isEmailVerified == false || request.resource.data.profile.email == resource.data.profile.email) &&
+                     // Prevent changing a verified phone number directly via rules.
+                     // Rule: If existing phone was verified, incoming phone must be the same.
+                     (resource.data.profile.isPhoneNumberVerified == false || request.resource.data.profile.primaryPhoneNumber == resource.data.profile.primaryPhoneNumber)
+                     // Add similar checks for other fields you want to protect from user updates, e.g.:
+                     // && (resource.data.profile.cnicNumber == null || request.resource.data.profile.cnicNumber == resource.data.profile.cnicNumber) // Prevents changing CNIC if set
+                     ; // End of allow update condition
+
+      // DELETE Access:
+      // Disallow direct client-side deletion (use backend Cloud Function).
+      allow delete: if false;
     }
+
+    // ======================================================================
+    // Clinics Collection (/clinics/{clinicId})
+    // ======================================================================
+    match /clinics/{clinicId} {
+
+      // --- Re-use helper function from users rules ---
+      function isAuthenticated() {
+        return request.auth != null;
+      }
+
+      // --- Helper function to check if the user is an admin for THIS clinic ---
+      function isClinicAdmin() {
+        // Checks if the authenticated user's UID is in the adminUids list of the clinic document
+        // `resource` refers to the existing document in Firestore.
+        return isAuthenticated() && request.auth.uid in resource.data.adminUids;
+      }
+
+      // READ Access:
+      // Best Practice: Allow any authenticated user to read clinic data
+      // (necessary for searching/viewing clinics).
+      // Can be refined later (e.g., check for isActive/isVerified flags).
+      allow read: if isAuthenticated();
+
+      // CREATE Access:
+      // Best Practice: Disallow direct client-side creation.
+      // Onboarding new clinics should be handled by backend/admin process.
+      allow create: if false;
+
+      // UPDATE Access:
+      // Best Practice: Allow updates only by users listed as admins for this clinic.
+      // Also, prevent clinic admins from updating certain protected fields.
+      allow update: if isClinicAdmin() &&
+                     // --- Protected Field Checks ---
+                     // Clinic admins should not change these fields.
+                     request.resource.data.clinicId == resource.data.clinicId && // Should use doc ID, but check if field exists
+                     request.resource.data.createdAt == resource.data.createdAt &&
+                     request.resource.data.onboardingDate == resource.data.onboardingDate &&
+                     request.resource.data.isVerified == resource.data.isVerified &&
+                     // Optionally protect rating fields if they are calculated by backend
+                     request.resource.data.rating.averageScore == resource.data.rating.averageScore &&
+                     request.resource.data.rating.count == resource.data.rating.count
+                     // Add other protected fields if necessary
+                     ; // End of allow update condition
+
+      // DELETE Access:
+      // Best Practice: Disallow direct client-side deletion.
+      // Should be handled by backend/admin process.
+      allow delete: if false;
+    }
+
   }
 }
