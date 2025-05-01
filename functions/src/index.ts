@@ -1,16 +1,18 @@
+// Import necessary Firebase modules and types
 import { logger as functionsLogger } from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as functionsV1 from "firebase-functions/v1"; // Explicitly for v1 triggers
 import { onCall, HttpsError } from "firebase-functions/v2/https"; // For v2 Callable functions
 import { Timestamp, FieldValue } from "firebase-admin/firestore"; // Import Timestamp AND FieldValue
 
-// Check if Firebase Admin SDK has already been initialized
+// Initialize Firebase Admin SDK if not already initialized
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
-const db = admin.firestore(); // Firestore instance
+const db = admin.firestore(); // Get Firestore database instance
 
+// Interface for standardizing error objects for logging
 interface ProcessedError {
   message: string;
   name?: string;
@@ -19,12 +21,15 @@ interface ProcessedError {
   details?: string | { [key: string]: unknown };
 }
 
-// Define a more specific type for Firestore update payloads
+// Type definition for Firestore update operations with proper typing
 type FirestoreUpdateData = {
   [key: string]: string | number | boolean | Timestamp | FieldValue | null | undefined | object | Array<unknown>;
 };
 
-
+/**
+ * Creates a new user document in Firestore when a new user is created in Firebase Auth
+ * This function is triggered automatically on user creation
+ */
 export const createNewUserDocument = functionsV1.auth
   .user()
   .onCreate(async (user: admin.auth.UserRecord) => {
@@ -36,9 +41,10 @@ export const createNewUserDocument = functionsV1.auth
       phoneNumber: phoneNumber,
     });
 
+    // Create the base user document with default values
     const newUserDocument = {
       uid: uid,
-      role: "patient",
+      role: "patient", // Default role for new users
       email: email || null,
       profile: {
         primaryPhoneNumber: phoneNumber || null,
@@ -56,6 +62,7 @@ export const createNewUserDocument = functionsV1.auth
           postalCode: "", country: "Pakistan",
         },
       },
+      // Role-specific data containers - initialized as empty objects
       patientSpecificData: {},
       doctorSpecificData: {},
       adminSpecificData: {},
@@ -71,9 +78,11 @@ export const createNewUserDocument = functionsV1.auth
     };
 
     try {
+      // Write the new user document to Firestore
       await db.collection("users").doc(uid).set(newUserDocument);
       functionsLogger.info(`Successfully created Firestore user document (V1 trigger) for UID: ${uid}`);
     } catch (error: unknown) {
+      // Comprehensive error handling with detailed logging
       let processedErrorForLogging: ProcessedError;
       if (error instanceof Error) {
         processedErrorForLogging = { message: error.message, name: error.name, stack: error.stack };
@@ -91,7 +100,7 @@ export const createNewUserDocument = functionsV1.auth
           processedErrorForLogging = {
             message: "Original error object could not be fully serialized in createNewUserDocument.",
             originalErrorType: typeof error,
-            details: String(serializationError),
+            details: String(serializationErrorCaught),
           };
         }
       } else {
@@ -105,8 +114,12 @@ export const createNewUserDocument = functionsV1.auth
     }
   });
 
-
+/**
+ * Callable function to book an appointment
+ * Handles appointment creation, validation, and notification
+ */
 export const bookAppointment = onCall(async (request) => {
+  // Check if user is authenticated
   if (!request.auth) {
     functionsLogger.error("bookAppointment: Unauthenticated user attempt.");
     throw new HttpsError("unauthenticated", "You must be logged in to book an appointment.");
@@ -126,18 +139,22 @@ export const bookAppointment = onCall(async (request) => {
 
   functionsLogger.info(`bookAppointment: Called by UID: ${patientUid} for doctor ${doctorId || "any"} at clinic ${clinicId} for datetime ${appointmentDateTime}`);
 
+  // Validate required fields
   if (!clinicId || !appointmentDateTime) {
     functionsLogger.error("bookAppointment: Missing required fields clinicId or appointmentDateTime.");
     throw new HttpsError("invalid-argument", "Missing required fields: clinicId and appointmentDateTime must be provided.");
   }
 
+  // Timezone constants for Pakistan
   const DOCTOR_OPERATIONAL_TIMEZONE_NAME = "Asia/Karachi";
   const PKT_OFFSET_FROM_UTC_MINUTES = 5 * 60;
 
+  // Parse and validate appointment datetime
   let parsedAppointmentDateTimeUTC: Date;
   try {
     const localDateTimeStr = String(appointmentDateTime);
 
+    // Split into date and time components
     const [datePart, timePart] = localDateTimeStr.split("T");
     if (!datePart || !timePart) {
       throw new Error(`Invalid datetime string format: "${localDateTimeStr}". Expected "YYYY-MM-DDTHH:MM:SS"`);
@@ -145,16 +162,22 @@ export const bookAppointment = onCall(async (request) => {
     const [year, month, day] = datePart.split("-").map(Number);
     const [hour, minute, second] = timePart.split(":").map(Number);
 
+    // Validate all components are numbers
     if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute) || (second !== undefined && isNaN(second)) ) {
       throw new Error(`Invalid date or time components in appointmentDateTime string: "${localDateTimeStr}"`);
     }
+    
+    // Convert local time to UTC by first creating a UTC date from components, then adjusting for Pakistan timezone
     const tempDateAsIfUTC = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
     functionsLogger.info(`bookAppointment: Intermediate tempDateAsIfUTC (nominal UTC from components): ${tempDateAsIfUTC.toISOString()}`);
     parsedAppointmentDateTimeUTC = new Date(tempDateAsIfUTC.getTime() - (PKT_OFFSET_FROM_UTC_MINUTES * 60000));
 
+    // Ensure we have a valid date after conversion
     if (isNaN(parsedAppointmentDateTimeUTC.getTime())) {
       throw new Error(`Failed to parse "${localDateTimeStr}" into a valid UTC date.`);
     }
+    
+    // Ensure appointment is at least 5 minutes in the future
     const now = new Date();
     const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60000);
     if (parsedAppointmentDateTimeUTC < fiveMinutesFromNow) {
@@ -168,12 +191,14 @@ export const bookAppointment = onCall(async (request) => {
     throw new HttpsError("invalid-argument", `Invalid appointment date/time: ${errMsg}`);
   }
 
+  // Calculate appointment duration and end time
   const DEFAULT_APPOINTMENT_DURATION_MINUTES = 30;
   const appointmentDuration = typeof clientDurationMinutes === "number" && clientDurationMinutes > 0 ?
     clientDurationMinutes :
     DEFAULT_APPOINTMENT_DURATION_MINUTES;
   const appointmentEndTimeUTC = new Date(parsedAppointmentDateTimeUTC.getTime() + appointmentDuration * 60000);
 
+  // Fetch doctor's name if a specific doctor was selected
   let fetchedDoctorName: string | null = null;
   if (doctorId) {
     try {
@@ -194,6 +219,7 @@ export const bookAppointment = onCall(async (request) => {
     }
   }
 
+  // Fetch clinic details
   let fetchedClinicName: string | null = null;
   let fetchedClinicAddressShort: string | null = null;
   if (clinicId) {
@@ -217,6 +243,7 @@ export const bookAppointment = onCall(async (request) => {
     }
   }
 
+  // Create the appointment document with all required fields
   const newAppointmentDocument = {
     patientUid: patientUid,
     patientName: request.auth.token?.name || null,
@@ -231,7 +258,7 @@ export const bookAppointment = onCall(async (request) => {
     durationMinutes: appointmentDuration,
     reasonForVisit: reasonForVisit || "",
     symptomsInput: clientSymptomsInput || null,
-    status: "pending_clinic_approval",
+    status: "pending_clinic_approval", // Initial status for all appointments
     bookingMethod: "ONLINE_PATIENT_APP",
     bookedByUid: patientUid,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -250,9 +277,11 @@ export const bookAppointment = onCall(async (request) => {
   };
 
   try {
+    // Create the appointment in Firestore
     const appointmentRef = await db.collection("appointments").add(newAppointmentDocument);
     functionsLogger.info(`bookAppointment: Successfully created appointment ${appointmentRef.id} for patient ${patientUid} at UTC: ${parsedAppointmentDateTimeUTC.toISOString()}`);
 
+    // Create a notification for the patient
     const patientNotificationRef = db.collection("users").doc(patientUid)
       .collection("notifications").doc();
     const appointmentDateForMessage = parsedAppointmentDateTimeUTC.toLocaleDateString("en-US", {
@@ -275,10 +304,12 @@ export const bookAppointment = onCall(async (request) => {
 
     return { success: true, appointmentId: appointmentRef.id, message: "Appointment requested successfully. Awaiting clinic confirmation." };
   } catch (error: unknown) {
+    // Comprehensive error handling and logging
     let clientMessage = "Failed to book appointment. Please try again later.";
     let errorDetailsForClient: object = { detail: "An internal error occurred." };
     let processedErrorForLogging: ProcessedError;
 
+    // Handle different error types for proper logging and client messaging
     if (error instanceof HttpsError) {
       throw error;
     }
@@ -310,7 +341,7 @@ export const bookAppointment = onCall(async (request) => {
   }
 });
 
-// --- getAvailableSlots FUNCTION ---
+// --- AVAILABLE SLOTS FUNCTION ---
 interface GetAvailableSlotsData {
   doctorId: string;
   date: string;
@@ -321,6 +352,10 @@ interface TimeSlot {
   endTime: string;
 }
 
+/**
+ * Converts time string (HH:MM) to minutes since midnight
+ * For example: "14:30" becomes 870 (14*60 + 30)
+ */
 const timeToMinutes = (timeStrInput: string): number => {
   const timeStr = String(timeStrInput || "").trim().replace(/^"|"$/g, "");
   const [hours, minutes] = timeStr.split(":").map(Number);
@@ -331,6 +366,10 @@ const timeToMinutes = (timeStrInput: string): number => {
   return hours * 60 + minutes;
 };
 
+/**
+ * Converts minutes since midnight back to time string (HH:MM)
+ * For example: 870 becomes "14:30"
+ */
 const minutesToTime = (totalMinutes: number): string => {
   if (isNaN(totalMinutes) || totalMinutes < 0 || totalMinutes >= 24 * 60) {
     functionsLogger.warn(`Invalid totalMinutes received in minutesToTime: ${totalMinutes}`);
@@ -341,13 +380,19 @@ const minutesToTime = (totalMinutes: number): string => {
   return `${hours}:${minutes}`;
 };
 
+/**
+ * Gets available appointment slots for a doctor on a specific date
+ * Considers the doctor's schedule template and any existing appointments
+ */
 export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSlot[] }> => {
+  // Check authentication
   if (!request.auth) {
     functionsLogger.error("getAvailableSlots: Unauthenticated user attempt.");
     throw new HttpsError("unauthenticated", "You must be logged in to view available slots.");
   }
   const patientUid = request.auth.uid;
 
+  // Extract and validate input parameters
   const data = request.data as GetAvailableSlotsData;
   const { doctorId, date: targetDateString } = data;
   functionsLogger.info(`getAvailableSlots called by patient UID: ${patientUid} for doctor UID: ${doctorId} on date: ${targetDateString}`);
@@ -362,6 +407,7 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
   }
 
   try {
+    // Verify doctor exists and is actually a doctor
     const doctorDocSnap = await db.collection("users").doc(doctorId).get();
     if (!doctorDocSnap.exists || doctorDocSnap.data()?.role !== "doctor") {
       throw new HttpsError("not-found", "Doctor profile not found or user is not a doctor.");
@@ -369,18 +415,21 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
     const doctorData = doctorDocSnap.data();
     if (!doctorData) throw new HttpsError("internal", "Doctor data is missing after existence check.");
 
+    // Get slot duration from doctor's settings, default to 30 minutes
     const slotDurationMinutes = doctorData.doctorSpecificData?.slotDurationMinutes || 30;
 
+    // Get doctor's schedule template and timezone
     const templateDocSnap = await db.collection("users").doc(doctorId).collection("scheduleTemplates").doc("default_weekly").get();
     const doctorTimeZone = templateDocSnap.exists ? templateDocSnap.data()?.timeZone || "Asia/Karachi" : "Asia/Karachi";
     functionsLogger.debug(`Doctor ${doctorId} timezone set to: ${doctorTimeZone}`);
 
-
+    // Find the doctor's working periods for the requested date
     let workPeriods: { start: string; end: string }[] = [];
     const dayOfWeekIndex = targetDateUtc.getUTCDay();
     const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
     const dayOfWeek = dayNames[dayOfWeekIndex];
 
+    // Check for date-specific overrides (e.g., if doctor is on vacation or has special hours)
     const overrideDocSnap = await db.collection("users").doc(doctorId).collection("dateOverrides").doc(targetDateString).get();
     if (overrideDocSnap.exists) {
       const overrideData = overrideDocSnap.data();
@@ -394,6 +443,7 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
       }
     }
 
+    // If no overrides, use weekly template for the day of week
     if (workPeriods.length === 0 && templateDocSnap.exists) {
       const templateData = templateDocSnap.data();
       workPeriods = templateData?.weeklyPattern?.[dayOfWeek] || [];
@@ -405,6 +455,7 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
       return { slots: [] };
     }
 
+    // Generate potential time slots from the working periods
     const potentialSlots: TimeSlot[] = [];
     workPeriods.forEach((period) => {
       let currentSlotStartTimeMinutes = timeToMinutes(period.start);
@@ -415,6 +466,7 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
         return;
       }
 
+      // Create slots within the working period based on the slot duration
       while (currentSlotStartTimeMinutes + slotDurationMinutes <= periodEndTimeMinutes) {
         const slotEndTimeMinutes = currentSlotStartTimeMinutes + slotDurationMinutes;
         potentialSlots.push({
@@ -432,6 +484,7 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
       return { slots: [] };
     }
 
+    // Find existing appointments for the doctor on the target date
     const startOfDayForQuery = Timestamp.fromDate(targetDateUtc);
     const tempEndOfDay = new Date(targetDateUtc);
     tempEndOfDay.setUTCHours(23, 59, 59, 999);
@@ -446,11 +499,13 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
     const appointmentsSnapshot = await appointmentsQuery.get();
     const bookedStartTimesMinutes: Set<number> = new Set();
 
+    // Process existing appointments to identify booked slots
     appointmentsSnapshot.forEach((docSnap) => {
       const apptData = docSnap.data();
       if (apptData.appointmentDateTime && apptData.appointmentDateTime instanceof Timestamp) {
         const apptDateUtc = apptData.appointmentDateTime.toDate();
 
+        // Convert UTC time to doctor's timezone to accurately check slot availability
         const apptTimeInDoctorTZString = apptDateUtc.toLocaleString("en-US", {
           year: "numeric", month: "2-digit", day: "2-digit",
           hour: "2-digit", minute: "2-digit", hourCycle: "h23",
@@ -480,6 +535,7 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
     });
     functionsLogger.debug(`Booked slot start times (in minutes, in doctor's TZ ${doctorTimeZone}) for ${doctorId} on ${targetDateString}:`, Array.from(bookedStartTimesMinutes));
 
+    // Filter out already booked slots
     const availableSlots = potentialSlots.filter((slot) => {
       const potentialSlotStartMinutes = timeToMinutes(slot.startTime);
       if (isNaN(potentialSlotStartMinutes)) return false;
@@ -489,6 +545,7 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
     functionsLogger.info(`Returning ${availableSlots.length} available slots for doctor ${doctorId} on ${targetDateString}.`);
     return { slots: availableSlots };
   } catch (error: unknown) {
+    // Handle errors
     let clientMessage = "Failed to retrieve available slots. Please try again later.";
     let errorDetailsForClient: object = { detail: "An internal error occurred." };
     let processedErrorForLogging: ProcessedError;
@@ -524,7 +581,12 @@ export const getAvailableSlots = onCall(async (request): Promise<{ slots: TimeSl
   }
 });
 
+/**
+ * Allows patients to cancel their appointments
+ * Enforces business rules like minimum cancellation time
+ */
 export const cancelPatientAppointment = onCall(async (request) => {
+  // Verify authentication
   if (!request.auth) {
     functionsLogger.error("cancelPatientAppointment: Unauthenticated user attempt.");
     throw new HttpsError("unauthenticated", "You must be logged in.");
@@ -538,20 +600,29 @@ export const cancelPatientAppointment = onCall(async (request) => {
   functionsLogger.info(`cancelPatientAppointment: Called by UID: ${patientUid} for appointmentId: ${appointmentId}`);
   const appointmentRef = db.collection("appointments").doc(appointmentId);
   try {
+    // Use transaction to ensure data consistency when cancelling
     await db.runTransaction(async (transaction) => {
       const apptDoc = await transaction.get(appointmentRef);
       if (!apptDoc.exists) throw new HttpsError("not-found", "Appointment not found.");
       const apptData = apptDoc.data();
       if (!apptData) throw new HttpsError("data-loss", "Appointment data is missing.");
+      
+      // Security check: verify this patient owns the appointment
       if (apptData.patientUid !== patientUid) throw new HttpsError("permission-denied", "You are not authorized to cancel this appointment.");
+      
+      // Business rule: only certain statuses can be cancelled
       const cancellableStatuses = ["confirmed", "pending_clinic_approval"];
       if (!cancellableStatuses.includes(apptData.status)) throw new HttpsError("failed-precondition", `Cannot cancel appointment with status: ${apptData.status}.`);
+      
+      // Business rule: can't cancel less than 1 hour before appointment
       const now = Timestamp.now();
       const appointmentTime = apptData.appointmentDateTime as Timestamp;
       const ONE_HOUR_IN_MILLIS = 60 * 60 * 1000;
       if (appointmentTime.toMillis() - now.toMillis() < ONE_HOUR_IN_MILLIS) {
         throw new HttpsError("failed-precondition", "Cannot cancel appointment less than 1 hour before its scheduled time. Please contact the clinic.");
       }
+      
+      // Update the appointment status to cancelled
       transaction.update(appointmentRef, {
         status: "cancelled_by_patient",
         cancellationReason: reason || "Cancelled by patient via app.",
@@ -567,6 +638,7 @@ export const cancelPatientAppointment = onCall(async (request) => {
   }
 });
 
+// Type definitions for user profile updates
 interface ProfileUpdatesClient {
   displayName?: string | null; firstName?: string | null; lastName?: string | null;
   primaryPhoneNumber?: string | null; email?: string | null; dateOfBirth?: string | null;
@@ -586,8 +658,12 @@ interface UpdateUserProfilePayloadClient {
   patientSpecificUpdates?: Partial<PatientSpecificUpdatesClient>;
 }
 
-
+/**
+ * Updates user profile information
+ * Handles field validation and data transformation
+ */
 export const updateUserProfile = onCall( async (request) => {
+  // Verify authentication
   if (!request.auth) {
     functionsLogger.error("updateUserProfile: Unauthenticated user attempt.");
     throw new HttpsError("unauthenticated", "Authentication is required to update your profile.");
@@ -596,6 +672,7 @@ export const updateUserProfile = onCall( async (request) => {
   const dataFromClient = request.data as UpdateUserProfilePayloadClient;
   functionsLogger.info(`updateUserProfile: Called by UID: ${uid}`, { rawDataFromClient: JSON.stringify(dataFromClient) });
 
+  // Check if there are actually any changes to make
   if ((!dataFromClient.profileUpdates || Object.keys(dataFromClient.profileUpdates).length === 0) &&
       (!dataFromClient.patientSpecificUpdates || Object.keys(dataFromClient.patientSpecificUpdates).length === 0)) {
     functionsLogger.info(`updateUserProfile: No update data fields provided by UID: ${uid}.`);
@@ -689,16 +766,21 @@ export const updateUserProfile = onCall( async (request) => {
     }
   }
 
-
+  // Prepare the update payload for Firestore
   const userRef = db.collection("users").doc(uid);
   const { serverTimestamp, delete: deleteField } = admin.firestore.FieldValue;
   const updatePayload: FirestoreUpdateData = {}; // Using stricter type
 
+  // Process profile updates
   if (dataFromClient.profileUpdates) {
     const { dateOfBirth, address, ...otherProfileUpdates } = dataFromClient.profileUpdates;
+    
+    // Handle simple fields
     for (const [key, value] of Object.entries(otherProfileUpdates)) {
       if (value !== undefined) updatePayload[`profile.${key}`] = value === null ? deleteField() : value;
     }
+    
+    // Special handling for date of birth (converts string to Timestamp)
     if (dateOfBirth !== undefined) {
       if (dateOfBirth === null || dateOfBirth === "") updatePayload["profile.dateOfBirth"] = null;
       else if (typeof dateOfBirth === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
@@ -712,6 +794,8 @@ export const updateUserProfile = onCall( async (request) => {
         }
       } else functionsLogger.warn(`User ${uid}: Malformed dateOfBirth: ${JSON.stringify(dateOfBirth)}. Not updated.`);
     }
+    
+    // Handle nested address object
     if (address !== undefined) {
       if (address === null) updatePayload["profile.address"] = deleteField();
       else {
@@ -722,6 +806,7 @@ export const updateUserProfile = onCall( async (request) => {
             addressHasUpdates = true;
           }
         }
+        // Ensure country defaults to Pakistan if not specified but other address fields are updated
         if (addressHasUpdates && updatePayload["profile.address.country"] === undefined && address.country === undefined) {
           const existingUserDoc = await userRef.get();
           const existingCountry = existingUserDoc.data()?.profile?.address?.country;
@@ -732,11 +817,17 @@ export const updateUserProfile = onCall( async (request) => {
       }
     }
   }
+  
+  // Process patient-specific updates
   if (dataFromClient.patientSpecificUpdates) {
     const { emergencyContact, ...otherPatientUpdates } = dataFromClient.patientSpecificUpdates;
+    
+    // Handle simple fields
     for (const [key, value] of Object.entries(otherPatientUpdates)) {
       if (value !== undefined) updatePayload[`patientSpecificData.${key}`] = value === null ? deleteField() : value;
     }
+    
+    // Handle nested emergency contact object
     if (emergencyContact !== undefined) {
       if (emergencyContact === null) updatePayload["patientSpecificData.emergencyContact"] = deleteField();
       else {
@@ -747,6 +838,7 @@ export const updateUserProfile = onCall( async (request) => {
     }
   }
 
+  // If there are fields to update, add the updatedAt timestamp and perform the update
   const updateFieldKeys = Object.keys(updatePayload);
   if (updateFieldKeys.length > 0) updatePayload.updatedAt = serverTimestamp();
   else {
@@ -765,7 +857,7 @@ export const updateUserProfile = onCall( async (request) => {
   }
 });
 
-// Define AppointmentStatus type (globally if used by multiple functions)
+// Appointment status type definition
 type AppointmentStatus =
     | "confirmed"
     | "pending_clinic_approval"
@@ -775,12 +867,18 @@ type AppointmentStatus =
     | "no_show"
     | "unknown";
 
+// Input payload for updating appointment status
 interface UpdateAppointmentStatusPayloadCF {
   appointmentId: string;
   newStatus: AppointmentStatus;
   notes?: string;
   visitSummaryForPatient?: string; // Added for saving summary directly
 }
+
+/**
+ * Allows clinic staff to update appointment statuses
+ * Includes authorization checks and patient notifications
+ */
 export const updateAppointmentStatusByStaff = onCall(async (request) => {
   functionsLogger.info("updateAppointmentStatusByStaff: Called with data:", request.data);
   if (!request.auth) {
@@ -790,6 +888,7 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
   const staffUid = request.auth.uid;
   const { appointmentId, newStatus, notes, visitSummaryForPatient } = request.data as UpdateAppointmentStatusPayloadCF;
 
+  // Validate inputs
   if (!appointmentId || !newStatus) {
     functionsLogger.error("updateAppointmentStatusByStaff: Missing appointmentId or newStatus.");
     throw new HttpsError("invalid-argument", "Appointment ID and new status are required.");
@@ -804,11 +903,13 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
   const staffUserRef = db.collection("users").doc(staffUid);
 
   try {
+    // Variables for patient notification
     let patientUidToNotify: string | null = null;
     let appointmentTimeForMessage: string = "an upcoming date";
     let doctorNameForMessage: string = "your doctor";
     const DOCTOR_OPERATIONAL_TIMEZONE_NAME_NOTIF = "Asia/Karachi";
 
+    // Run as a transaction to ensure data consistency
     await db.runTransaction(async (transaction) => {
       const staffDoc = await transaction.get(staffUserRef);
       const appointmentDoc = await transaction.get(appointmentRef);
@@ -823,6 +924,7 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
       const staffData = staffDoc.data()!; // Assert data exists after check
       const appointmentData = appointmentDoc.data()!; // Assert data exists after check
 
+      // Get patient and appointment details for notification
       patientUidToNotify = appointmentData.patientUid;
       if (appointmentData.appointmentDateTime instanceof Timestamp) {
         appointmentTimeForMessage = appointmentData.appointmentDateTime.toDate().toLocaleDateString("en-US", {
@@ -832,6 +934,7 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
       }
       doctorNameForMessage = appointmentData.doctorName || "the clinic";
 
+      // Authorization check: Only clinic admin or the doctor can update their own appointments
       const staffRole = staffData.role;
       const appointmentClinicId = appointmentData.clinicId;
       const appointmentDoctorId = appointmentData.doctorId;
@@ -850,6 +953,8 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
         functionsLogger.error(`updateAppointmentStatusByStaff: Staff UID ${staffUid} (Role: ${staffRole}) is not authorized to update appointment ${appointmentId}.`);
         throw new HttpsError("permission-denied", "You are not authorized to update this appointment.");
       }
+      
+      // Business rules for status transitions
       if (newStatus === "confirmed" && (currentAppointmentStatus === "cancelled_by_clinic" || currentAppointmentStatus === "cancelled_by_patient")) {
         throw new HttpsError("failed-precondition", `Cannot confirm an already cancelled appointment (Status: ${currentAppointmentStatus}).`);
       }
@@ -857,18 +962,21 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
         throw new HttpsError("failed-precondition", "Appointment must be confirmed before it can be marked as completed.");
       }
 
-      // Use FirestoreUpdateData for stricter typing
+      // Prepare update data
       const updateData: FirestoreUpdateData = {
         status: newStatus,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
+      // Append notes if provided
       if (notes !== undefined && notes !== null) {
         updateData.notes = appointmentData.notes ? `${appointmentData.notes}\nStaff (${new Date().toLocaleDateString()}): ${notes}` : `Staff (${new Date().toLocaleDateString()}): ${notes}`;
       }
+      // Store cancellation reason
       if (newStatus === "cancelled_by_clinic" && notes) {
         updateData.cancellationReason = notes;
       }
+      // Add visit summary for completed appointments
       if (newStatus === "completed" && visitSummaryForPatient !== undefined && typeof visitSummaryForPatient === "string") {
         updateData.visitSummaryForPatient = visitSummaryForPatient.trim();
       }
@@ -877,11 +985,13 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
       functionsLogger.info(`updateAppointmentStatusByStaff: Appointment ${appointmentId} status updated to ${newStatus} by staff ${staffUid}.`);
     });
 
+    // Send notification to patient if needed
     if (patientUidToNotify) {
       let notifTitle = "Appointment Update";
       let notifMessage = `Your appointment on ${appointmentTimeForMessage} with ${doctorNameForMessage} has been updated.`;
       let notifType = "APPOINTMENT_UPDATE";
 
+      // Create specific notification based on status change
       if (newStatus === "confirmed") {
         notifTitle = "Appointment Confirmed!";
         notifMessage = `Great news! Your appointment on ${appointmentTimeForMessage} with ${doctorNameForMessage} has been confirmed.`;
@@ -922,6 +1032,9 @@ export const updateAppointmentStatusByStaff = onCall(async (request) => {
   }
 });
 
+/**
+ * Allows staff to set or update the visit summary for an appointment
+ */
 interface SetAppointmentVisitSummaryPayload {
   appointmentId: string;
   visitSummary: string;
@@ -934,14 +1047,19 @@ export const setAppointmentVisitSummaryByStaff = onCall(async (request) => {
   }
   const staffUid = request.auth.uid;
   const { appointmentId, visitSummary } = request.data as SetAppointmentVisitSummaryPayload;
+  
+  // Validate inputs
   if (!appointmentId || typeof visitSummary !== "string" || visitSummary.trim() === "") {
     functionsLogger.error("setAppointmentVisitSummaryByStaff: Missing required fields or empty summary.");
     throw new HttpsError("invalid-argument", "Appointment ID and a non-empty visit summary string are required.");
   }
+  
   const appointmentRef = db.collection("appointments").doc(appointmentId);
   const staffUserRef = db.collection("users").doc(staffUid);
   try {
     let patientUidToNotify: string | null = null;
+    
+    // Run as transaction for data consistency
     await db.runTransaction(async (transaction) => {
       const staffDoc = await transaction.get(staffUserRef);
       const appointmentDoc = await transaction.get(appointmentRef);
@@ -949,29 +1067,41 @@ export const setAppointmentVisitSummaryByStaff = onCall(async (request) => {
       if (!appointmentDoc.exists) throw new HttpsError("not-found", "Appointment not found.");
       const staffData = staffDoc.data()!;
       const appointmentData = appointmentDoc.data()!;
+      
       patientUidToNotify = appointmentData.patientUid;
+      
+      // Authorization checks - same as appointment status update function
       const staffRole = staffData.role;
       const appointmentClinicId = appointmentData.clinicId;
       const appointmentDoctorId = appointmentData.doctorId;
       const currentAppointmentStatus = appointmentData.status as AppointmentStatus;
       let isAuthorized = false;
+      
       if (staffRole === "clinic_admin" && staffData.adminSpecificData?.managesClinicId === appointmentClinicId) {
         const clinicDoc = await transaction.get(db.collection("clinics").doc(appointmentClinicId));
         if (clinicDoc.exists && clinicDoc.data()?.adminUids?.includes(staffUid)) isAuthorized = true;
       } else if (staffRole === "doctor" && staffUid === appointmentDoctorId) isAuthorized = true;
+      
       if (!isAuthorized) throw new HttpsError("permission-denied", "Not authorized to update this summary.");
+      
+      // Warning if adding summary to non-completed appointment
       if (currentAppointmentStatus !== "completed") {
         functionsLogger.warn(`Attempt to add summary to non-completed appt. Status: ${currentAppointmentStatus}`);
       }
+      
+      // Update the summary
       transaction.update(appointmentRef, {
         visitSummaryForPatient: visitSummary.trim(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       functionsLogger.info(`Visit summary for appt ${appointmentId} updated by ${staffUid}.`);
     });
+    
+    // Notify the patient about the summary
     if (patientUidToNotify) {
       const notifRef = db.collection("users").doc(patientUidToNotify).collection("notifications").doc();
       const appointmentDocForNotification = await appointmentRef.get();
+      // Check if summary was updated or newly added
       const actionText = appointmentDocForNotification.data()?.visitSummaryForPatient && appointmentDocForNotification.data()?.visitSummaryForPatient !== visitSummary.trim() ? "updated" : "added";
 
       await notifRef.set({
@@ -991,5 +1121,3 @@ export const setAppointmentVisitSummaryByStaff = onCall(async (request) => {
     throw new HttpsError("internal", `Failed to save visit summary: ${errorMessage}`);
   }
 });
-
-
