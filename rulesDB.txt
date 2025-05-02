@@ -3,8 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function: Checks if the request is from an authenticated user
-    // Define at a higher scope if used by multiple collections, or repeat if preferred for clarity
+    // Global helper: Checks if the request is from an authenticated user
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -13,163 +12,203 @@ service cloud.firestore {
     // Users Collection (/users/{userId})
     // ======================================================================
     match /users/{userId} {
-
-      // Helper function: Checks if the requesting user is the owner of this document
+      // Match-specific helper: Checks if the requesting user is the owner of this document
       function isOwner() {
         return isAuthenticated() && request.auth.uid == userId;
       }
-
-      // READ Access:
-      // 1. Allow a user to read their own document.
-      // 2. Allow any authenticated user to read documents of users whose 'role' is 'doctor'.
-      //    (This allows fetching public doctor profiles).
-      allow read: if isOwner() || (isAuthenticated() && resource.data.role == 'doctor');
-
-      // CREATE Access:
-      // Disallow direct client-side creation (use backend Cloud Function).
-      allow create: if false;
-
-      // UPDATE Access:
-      // Allow user to update their own document, BUT prevent changing protected fields.
-      allow update: if isOwner() &&
-                     // Ensure the UID within the document data itself isn't being changed
-                     request.resource.data.uid == userId &&
-                     // --- Protected Field Checks ---
-                     request.resource.data.uid == resource.data.uid &&
-                     request.resource.data.role == resource.data.role &&
-                     request.resource.data.createdAt == resource.data.createdAt &&
-                     request.resource.data.profile.isEmailVerified == resource.data.profile.isEmailVerified &&
-                     request.resource.data.profile.isPhoneNumberVerified == resource.data.profile.isPhoneNumberVerified &&
-                     (resource.data.profile.isEmailVerified == false || request.resource.data.profile.email == resource.data.profile.email) &&
-                     (resource.data.profile.isPhoneNumberVerified == false || request.resource.data.profile.primaryPhoneNumber == resource.data.profile.primaryPhoneNumber);
-
-      // DELETE Access:
-      // Disallow direct client-side deletion (use backend Cloud Function).
-      allow delete: if false;
-    }
-
-    // ======================================================================
-    // Clinics Collection (/clinics/{clinicId})
-    // ======================================================================
-    match /clinics/{clinicId} {
-      // Helper function specific to clinic admin checks for this clinic document
-      function isClinicAdminOfThisClinic() {
-        return isAuthenticated() && request.auth.uid in resource.data.adminUids;
+      
+      // Match-specific helper: Is the requester a clinic_admin whose managesClinicId is present in this doctor's linkedClinicIds
+      function isAdminManagingThisDoctor() {
+        return isAuthenticated() &&
+               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'clinic_admin' &&
+               resource.data.role == 'doctor' && // Target resource is a doctor
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminSpecificData.managesClinicId in resource.data.doctorSpecificData.linkedClinicIds;
+      }
+      
+      // Match-specific helper: Is the requester a CHW linked to this patient resource
+      function isChwLinkedToThisPatient() {
+        return isAuthenticated() &&
+               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'chw_support' &&
+               resource.data.role == 'patient' && // Target resource is a patient
+               resource.data.patientSpecificData.linkedChwUid == request.auth.uid;
       }
 
-      // READ Access:
-      // Allow any authenticated user to read clinic data.
-      allow read: if isAuthenticated();
+      // Match-specific helper: Is this CHW resource linked to the requesting patient
+      function isThisChwLinkedToRequestingPatient() {
+          return isAuthenticated() &&
+                 resource.data.role == 'chw_support' && // Target resource is a CHW
+                 exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                 get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'patient' &&
+                 get(/databases/$(database)/documents/users/$(request.auth.uid)).data.patientSpecificData.linkedChwUid == userId; // userId is the CHW's uid from path
+      }
 
-      // CREATE Access:
-      // Disallow direct client-side creation.
+
+      allow read: if isOwner() || 
+                     (isAuthenticated() && resource.data.role == 'doctor') || // Public doctor profiles
+                     isAdminManagingThisDoctor() || // Admin viewing their doctor's profile
+                     isChwLinkedToThisPatient() || // CHW viewing linked patient
+                     isThisChwLinkedToRequestingPatient(); // Patient viewing linked CHW
+
       allow create: if false;
 
-      // UPDATE Access:
-      // Allow updates only by users listed as admins for this clinic,
-      // and prevent updating protected fields.
-      allow update: if isClinicAdminOfThisClinic() &&
-                     // Protected Field Checks for clinics
-                     // (Assuming clinicId is the document ID and not a field to be updated)
-                     request.resource.data.createdAt == resource.data.createdAt &&
-                     request.resource.data.onboardingDate == resource.data.onboardingDate &&
-                     request.resource.data.isVerified == resource.data.isVerified &&
-                     // Rating should ideally be updated by a backend aggregation
-                     request.resource.data.rating.averageScore == resource.data.rating.averageScore &&
-                     request.resource.data.rating.count == resource.data.rating.count;
+      allow update: if isOwner() &&
+                       request.resource.data.uid == userId &&
+                       request.resource.data.uid == resource.data.uid &&
+                       request.resource.data.role == resource.data.role &&
+                       request.resource.data.email == resource.data.email &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       request.resource.data.profile.isEmailVerified == resource.data.profile.isEmailVerified &&
+                       request.resource.data.profile.isPhoneNumberVerified == resource.data.profile.isPhoneNumberVerified &&
+                       (resource.data.profile.isEmailVerified == false || request.resource.data.profile.email == resource.data.profile.email) &&
+                       (resource.data.profile.isPhoneNumberVerified == false || request.resource.data.profile.primaryPhoneNumber == resource.data.profile.primaryPhoneNumber) &&
+                       // Ensure role-specific data is not tampered with by other roles if owner
+                       (resource.data.role != 'doctor' || request.resource.data.doctorSpecificData == resource.data.doctorSpecificData || request.resource.data.doctorSpecificData != null) &&
+                       (resource.data.role != 'clinic_admin' || request.resource.data.adminSpecificData == resource.data.adminSpecificData || request.resource.data.adminSpecificData != null) &&
+                       (resource.data.role != 'patient' || request.resource.data.patientSpecificData == resource.data.patientSpecificData || request.resource.data.patientSpecificData != null) &&
+                       (resource.data.role != 'chw_support' || request.resource.data.chwSpecificData == resource.data.chwSpecificData || request.resource.data.chwSpecificData != null) &&
+                       request.resource.data.updatedAt == request.time; 
 
-      // DELETE Access:
-      // Disallow direct client-side deletion.
+      allow delete: if false;
+
+      match /scheduleTemplates/{templateId} {
+        allow read: if (isOwner() && get(/databases/$(database)/documents/users/$(userId)).data.role == 'doctor') ||
+                       (isAuthenticated() && 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'clinic_admin' &&
+                        get(/databases/$(database)/documents/users/$(userId)).data.role == 'doctor' && // Target user is a doctor
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminSpecificData.managesClinicId in get(/databases/$(database)/documents/users/$(userId)).data.doctorSpecificData.linkedClinicIds
+                       );
+        allow write: if isOwner() && get(/databases/$(database)/documents/users/$(userId)).data.role == 'doctor';
+      }
+      match /dateOverrides/{overrideDate} {
+        allow read: if (isOwner() && get(/databases/$(database)/documents/users/$(userId)).data.role == 'doctor') ||
+                       (isAuthenticated() && 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'clinic_admin' &&
+                        get(/databases/$(database)/documents/users/$(userId)).data.role == 'doctor' &&
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminSpecificData.managesClinicId in get(/databases/$(database)/documents/users/$(userId)).data.doctorSpecificData.linkedClinicIds
+                       );
+        allow write: if isOwner() && get(/databases/$(database)/documents/users/$(userId)).data.role == 'doctor';
+      }
+    }
+
+    match /clinics/{clinicId} {
+      function isAuthUserAdminOfThisClinic() {
+        // Assumes user doc for request.auth.uid exists and has role & adminSpecificData
+        return isAuthenticated() &&
+               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'clinic_admin' &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminSpecificData.managesClinicId == clinicId &&
+               request.auth.uid in resource.data.adminUids; // Checks this clinic's own adminUids array
+      }
+
+      allow read: if isAuthenticated();
+      allow create: if false;
+      allow update: if isAuthUserAdminOfThisClinic() &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       request.resource.data.onboardingDate == resource.data.onboardingDate &&
+                       request.resource.data.isVerified == resource.data.isVerified &&
+                       (request.resource.data.rating == resource.data.rating || 
+                         ( ('rating' in request.resource.data && request.resource.data.rating.keys().hasOnly(['averageScore', 'count'])) && 
+                           ('rating' in resource.data && request.resource.data.rating.averageScore == resource.data.rating.averageScore && request.resource.data.rating.count == resource.data.rating.count)
+                         ) || !('rating' in resource.data)
+                       ) &&
+                       request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
     
-    // ======================================================================
-    // Appointments Collection (/appointments/{appointmentId})
-    // ======================================================================
     match /appointments/{appointmentId} {
-
-      function isThePatientForThisAppointment() {
-        // For read/update/delete, 'resource.data' is the existing document.
-        // For create, 'request.resource.data' is the new document.
-        let patientUidToCheck = (resource == null ? request.resource.data.patientUid : resource.data.patientUid);
-        return isAuthenticated() && request.auth.uid == patientUidToCheck;
+      // --- Match-specific helper functions for /appointments ---
+      function isPatient() { // Checks against resource.data (for read/update)
+        return isAuthenticated() && request.auth.uid == resource.data.patientUid;
       }
 
-      function isTheDoctorForThisAppointment() {
-        let doctorIdToCheck = (resource == null ? request.resource.data.doctorId : resource.data.doctorId);
-        return isAuthenticated() && request.auth.uid == doctorIdToCheck;
+      function isDoctor() { // Checks against resource.data
+        return isAuthenticated() && 
+               request.auth.uid == resource.data.doctorId &&
+               exists(/databases/$(database)/documents/users/$(request.auth.uid)) && // Ensure doctor user doc exists
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'doctor';
       }
 
-      function isClinicAdminForThisAppointment() {
-        let clinicIdToCheck = (resource == null ? request.resource.data.clinicId : request.resource.data.clinicId);
-        // Ensure clinicIdToCheck is not null or undefined before using it in get()
-        return isAuthenticated() && clinicIdToCheck != null &&
-               request.auth.uid in get(/databases/$(database)/documents/clinics/$(clinicIdToCheck)).data.adminUids;
+      // ** This is the primary function for clinic admin access to appointments **
+      function isAdminOfAppointmentClinic() {
+        // Checks if authenticated user is 'clinic_admin' AND their 'managesClinicId'
+        // (from their own user document) matches the appointment's 'clinicId'.
+        // Also verifies against the clinic's own adminUids list.
+        return isAuthenticated() &&
+               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'clinic_admin' &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminSpecificData.managesClinicId == resource.data.clinicId &&
+               // And the clinic for this appointment lists this user as an admin
+               exists(/databases/$(database)/documents/clinics/$(resource.data.clinicId)) &&
+               request.auth.uid in get(/databases/$(database)/documents/clinics/$(resource.data.clinicId)).data.adminUids;
       }
-
-      function hasRequiredCreateFields() {
-        let data = request.resource.data;
-        return data.patientUid != null &&
-               data.clinicId != null &&
-               data.appointmentDateTime != null &&
-               data.status != null &&
-               data.bookedByUid != null &&
-               data.createdAt == request.time; // Enforce server timestamp on create
-      }
-
-      function patientIsUpdatingAllowedFields() {
-         let newData = request.resource.data;
-         let oldData = resource.data;
-         let isStatusChangeToCancelled = (newData.status == 'cancelled_by_patient' && oldData.status != 'completed' && oldData.status != 'cancelled_by_patient' && oldData.status != 'cancelled_by_clinic');
-         
-         // Patient can only update status to cancel, or their reasonForVisit/symptomsInput.
-         // All other core fields must remain the same.
-         return (isStatusChangeToCancelled || newData.reasonForVisit != oldData.reasonForVisit || newData.symptomsInput != oldData.symptomsInput) &&
-                newData.patientUid == oldData.patientUid &&
-                newData.clinicId == oldData.clinicId &&
-                newData.doctorId == oldData.doctorId &&
-                newData.appointmentDateTime == oldData.appointmentDateTime &&
-                newData.bookedByUid == oldData.bookedByUid &&
-                newData.createdAt == oldData.createdAt &&
-                newData.updatedAt == request.time; // Enforce server timestamp on update
-      }
-
-       function clinicAdminIsUpdatingAllowedFields() {
-          let newData = request.resource.data;
-          let oldData = resource.data;
-          // Clinic admin cannot change fundamental booking details like patient, clinic, original doctor, created time.
-          // They can change status, notes, reassign doctor (if doctorId field is updatable by them), etc.
-          return newData.patientUid == oldData.patientUid &&
-                 newData.clinicId == oldData.clinicId &&
-                 //newData.doctorId == oldData.doctorId && // Or allow doctorId to be changed by admin
-                 newData.createdAt == oldData.createdAt &&
-                 newData.bookedByUid == oldData.bookedByUid && // bookedBy should be immutable
-                 newData.updatedAt == request.time; // Enforce server timestamp on update
-       }
-
-      // READ: Patient, the assigned Doctor, or an Admin of the clinic.
-      allow read: if isAuthenticated() && 
-                   (isThePatientForThisAppointment() || 
-                    isTheDoctorForThisAppointment() || 
-                    isClinicAdminForThisAppointment());
-
-      // CREATE: Authenticated patient booking for themselves, or a clinic admin.
-      // Basic validation included.
-      allow create: if isAuthenticated() &&
-                     hasRequiredCreateFields() &&
-                     request.resource.data.appointmentDateTime > request.time && // Must be in future
-                     ( (request.resource.data.patientUid == request.auth.uid && request.resource.data.bookedByUid == request.auth.uid) || // Patient booking for self
-                       isClinicAdminForThisAppointment() ); // Clinic admin booking
-
-      // UPDATE: Patient can make limited updates (like cancelling).
-      // Clinic admin can make broader updates (respecting immutable fields).
-      // Doctor updates can be added here if needed.
-      allow update: if isAuthenticated() &&
-                     ( (isThePatientForThisAppointment() && patientIsUpdatingAllowedFields()) ||
-                       (isClinicAdminForThisAppointment() && clinicAdminIsUpdatingAllowedFields()) );
       
-      // DELETE: Disallowed for clients.
+      function isChwForPatient() {
+        return isAuthenticated() &&
+               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'chw_support' &&
+               exists(/databases/$(database)/documents/users/$(resource.data.patientUid)) && // Patient doc must exist
+               get(/databases/$(database)/documents/users/$(resource.data.patientUid)).data.patientSpecificData.linkedChwUid == request.auth.uid;
+      }
+
+      // --- Allow statements for /appointments ---
+      allow read: if isAuthenticated() && 
+                      (isPatient() || 
+                       isDoctor() || 
+                       isAdminOfAppointmentClinic() ||
+                       isChwForPatient()
+                      );
+
+      allow create: if isAuthenticated() &&
+                       // Creator is booker
+                       request.resource.data.bookedByUid == request.auth.uid &&
+                       // Server timestamps
+                       request.resource.data.createdAt == request.time &&
+                       request.resource.data.updatedAt == request.time &&
+                       // Appointment time valid
+                       request.resource.data.appointmentDateTime is timestamp &&
+                       request.resource.data.appointmentDateTime.toMillis() > request.time.toMillis() &&
+                       // Valid initial status
+                       (request.resource.data.status == 'pending_clinic_approval' || request.resource.data.status == 'confirmed') &&
+                       // Clinic exists, doctor (if any) exists and is a doctor
+                       request.resource.data.clinicId != null &&
+                       exists(/databases/$(database)/documents/clinics/$(request.resource.data.clinicId)) &&
+                       (request.resource.data.doctorId == null || 
+                         (request.resource.data.doctorId != null && 
+                          exists(/databases/$(database)/documents/users/$(request.resource.data.doctorId)) && 
+                          get(/databases/$(database)/documents/users/$(request.resource.data.doctorId)).data.role == 'doctor')
+                       ) &&
+                       // Either patient books for self OR admin of target clinic books
+                       ( (request.resource.data.patientUid == request.auth.uid) || 
+                         ( exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'clinic_admin' &&
+                           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminSpecificData.managesClinicId == request.resource.data.clinicId &&
+                           exists(/databases/$(database)/documents/clinics/$(request.resource.data.clinicId)) && // Ensure clinic exists
+                           request.auth.uid in get(/databases/$(database)/documents/clinics/$(request.resource.data.clinicId)).data.adminUids
+                         )
+                       );
+
+      allow update: if isAuthenticated() && request.resource.data.updatedAt == request.time && (
+                      // Patient cancelling
+                      (isPatient() &&
+                        request.resource.data.status == 'cancelled_by_patient' &&
+                        (resource.data.status == 'pending_clinic_approval' || resource.data.status == 'confirmed') &&
+                        (resource.data.appointmentDateTime.toMillis() > request.time.toMillis() + (1 * 60 * 60 * 1000)) && // >1hr window
+                        request.resource.data.keys().hasAll(['status', 'updatedAt', 'cancellationReason']) && // Strict fields
+                        request.resource.data.patientUid == resource.data.patientUid &&
+                        request.resource.data.clinicId == resource.data.clinicId &&
+                        request.resource.data.doctorId == resource.data.doctorId &&
+                        request.resource.data.appointmentDateTime == resource.data.appointmentDateTime &&
+                        request.resource.data.bookedByUid == resource.data.bookedByUid &&
+                        request.resource.data.createdAt == resource.data.createdAt
+                      )
+                      // STAFF UPDATES SHOULD BE VIA CLOUD FUNCTIONS (e.g., updateAppointmentStatusByStaff)
+                      // If direct staff client updates are absolutely needed for very specific fields (e.g. internal notes by doctor):
+                      // || (isDoctor() && /* very specific field checks, e.g., notes update */ )
+                    );
+      
       allow delete: if false;
     }
-  }
-}
+  } // End match /databases/{database}/documents
+} // End service cloud.firestore
