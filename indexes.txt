@@ -1,0 +1,12 @@
+
+Collection ID	Fields indexed 
+Query scope		Status	
+appointments	doctorId Ascending appointmentDateTime Ascending __name__ Ascending	Collection		Enabled	
+clinics	isActive Ascending isVerified Ascending name Ascending __name__ Ascending	Collection		Enabled	
+appointments	patientUid Ascending appointmentDateTime Ascending __name__ Ascending	Collection		Enabled	
+appointments	clinicId Ascending appointmentDateTime Ascending __name__ Ascending	Collection		Enabled	
+appointments	clinicId Ascending appointmendDateToime Descending __name__ Descending	Collection		Enabled	
+appointments	patientUid Ascending appointmentDateTime Descending __name__ Descending	Collection		Enabled	
+appointments	clinicId Ascending appointmentDateTime Descending __name__ Descending	Collection		Enabled	
+appointments	doctorId Ascending status Ascending appointmentDateTime Ascending __name__ Ascending	Collection		Enabled	
+appointments	doctorId Ascending appointmentDateTime Descending __name__ Descending	Collection		Enabled	
