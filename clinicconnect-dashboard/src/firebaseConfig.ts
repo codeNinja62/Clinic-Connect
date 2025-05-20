@@ -6,7 +6,7 @@ import { getFunctions } from "firebase/functions"; // For callable functions
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyC4Cvo_FctzvKyiHFOaPRunsRQFWWGZ-JY",
+  apiKey: "API-KEY",
   authDomain: "clinicconnectpk.firebaseapp.com",
   projectId: "clinicconnectpk",
   storageBucket: "clinicconnectpk.firebasestorage.app",
